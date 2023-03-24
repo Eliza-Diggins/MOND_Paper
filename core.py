@@ -20,12 +20,14 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from matplotlib.container import ErrorbarContainer
 from matplotlib.collections import LineCollection
+from scipy.optimize import curve_fit,brentq
 #----------------------------------------------------------------------------------------------------------------------#
 #   Constants                                                                                                          #
 #----------------------------------------------------------------------------------------------------------------------#
 proton_mass = 1.672621911e-27 # KG
 G = 6.674e-11
 G_mass = 1.39367222e-19
+G_kpc2_m_kg_s2 = 4.3
 a_0 = 1.2e-10
 #- Conversions -#
 inv_cmToinv_kpc = 3.08546e21
@@ -60,11 +62,59 @@ class Cluster:
 
         return gas_density(r,*[getattr(self,p) for p in params])
 
+    def get_NFW(self,r):
+        gas_density = self.gas_density(r) #- grabbing the gas density so that we can fit it.
+        scale = brentq(lambda x: x+x**3 - (gas_density[0]/gas_density[-1]),0,15)
+        RS = r[-1]/scale
+
+        rs = r[np.where(r<RS)][-1]
+        print(rs,RS)
+        po = 4*gas_density[np.where(r==rs)][0]
+        print(po)
+        fit = curve_fit(NFW,r,gas_density,p0=[po,200])
+
+        return fit
+
+    def nfw(self,r):
+        return NFW(r,self.NFW_RHO0,self.NFW_RS)
+
+    def get_aqual_potential(self,r, A):
+
+        # Setup
+        #--------------------------------------------------------------------------------------------------------------#
+        #- Newtonian poptential -#
+        # -4 pi G rho Rs^3/r * ln(1+r/rs)
+        phi_n = -np.flip(((4 * np.pi * G_kpc2_m_kg_s2 *self.NFW_RHO0* (self.NFW_RS)**3)/(r))*np.log(1+(r/self.NFW_RS)))
+        dphi_n = np.gradient(phi_n,r)/(3.086e19)
+
+
+        #- Setting up the Euler Run. -#
+        r = np.flip(r)
+        phi,dphi = np.zeros((r.size,)),np.zeros((r.size,))
+        dr = [np.abs(r[i]-r[i-1]) for i in range(1,len(r))]
+
+        # Running
+        #--------------------------------------------------------------------------------------------------------------#
+        for i,rs in enumerate(r):
+            if i > 0:
+                print(i,rs,phi[i-1],A(phi[i-1]))
+
+                dphi[i] = ((dphi_n[i])/2) - np.sqrt(dphi_n[i]**2 -(4*dphi_n[i]*A(phi[i-1])))/2
+                print(dphi[i])
+                phi[i] = phi[i-1] + (dphi[i]*dr[i-1])
+
+        r, phi,dphi = np.flip(r),np.flip(phi),np.flip(-dphi)
+
+        M = ((r**2)/G_mass)*dphi*(np.abs(dphi)/(A(phi)+np.abs(dphi)))
+
+        plt.loglog(r[:-1],M[:-1])
+        plt.loglog(r,4*np.pi*cumulative_trapezoid(self.nfw(r)*r**2,r,initial=M[-1]))
+        plt.show()
 #----------------------------------------------------------------------------------------------------------------------#
 #   Functions                                                                                                           #
 #----------------------------------------------------------------------------------------------------------------------#
 def load_clusters():
-    os.chdir("C:\\Users\\13852\\PycharmProjects\\MOND_Paper")
+    os.chdir("/home/ediggins/Documents/ediggins_personal/MOND_Paper")
     df = pd.read_csv("datasets/Vikhlinin.csv")
 
     clusters = []
@@ -102,6 +152,7 @@ def Mdynamical_mass(gamma,r,interp):
 
 def rho_bcg(r,M,h):
     return (5.3e11*(M/1e14)**(0.42))*h/(2*np.pi*r*(r+h)**3)
+
 def get_temperature_profile(m_dm,
                             m_g,
                             r,
@@ -110,7 +161,8 @@ def get_temperature_profile(m_dm,
                                  independent_units=None,
                                  dependent_units=None,
                                  output_units=None,
-                                 sample_frequency=1
+                                 sample_frequency=1,
+                            T0=0
                                  ):
     #- Quantity Calculations -#
     m_tot = m_g+m_dm
@@ -148,20 +200,14 @@ def get_temperature_profile(m_dm,
     # Solving the temperature equation!
     #------------------------------------------------------------------------------------------------------------------#
     integrand = np.flip(cumulative_trapezoid(np.flip(rho_g*field),np.flip(r),initial=0))
-    #T## = *(m_p.in_units("kg")*mu)/(rho_g*(1*pyn.units.Unit("m").in_units(CONFIG["units"]["default_length_unit"]))) * integrand
+    T = ((proton_mass*eta)/(rho_g) * integrand * 3.086e19 * 6.242e15)
 
-    #return T*(pyn.units.Unit("keV").in_units(output_units))
+    return T
 
+def NFW(x,rho,rs):
+    return rho/((x/rs)*(1+(x/rs))**2)
 
 if __name__ == '__main__':
-    mpl.rcParams["text.usetex"] = True
-    mpl.rcParams["text.latex.preamble"] = r"\usepackage{graphicx,amsmath,amssymb,amsfonts,algorithmicx,algorithm,algpseudocodex}"
-    plt.rcParams['xtick.major.size'] = 8
-    plt.rcParams['xtick.minor.size'] = 5
-    plt.rcParams['ytick.major.size'] = 8
-    plt.rcParams['ytick.minor.size'] = 5
-    plt.rcParams['xtick.direction'] = "in"
-    plt.rcParams['ytick.direction'] = "in"
 
     clusters = load_clusters()
     r_disp = [(90,1000),(20,800),(60,1000),(60,2000),(60,1200),(20,1100),(80,1100),(20,1100),
@@ -169,53 +215,24 @@ if __name__ == '__main__':
     cs = ["#e60049", "#0bb4ff", "#50e991", "#e6d800", "#9b19f5", "#ffa300", "#dc0ab4", "#b3d4ff", "#f46a9b",
           "#e60049", "#0bb4ff", "#50e991"]
 
-    for id,p in enumerate(zip(clusters,r_disp,cs)):
-        cluster, rd, cs = p
-        r = np.linspace(rd[0],5000,4000)
-        T,rho = cluster.gas_temperature(r),cluster.gas_density(r)
-        M,N = Mdynamical_mass(gamma(T,rho,r),r,lambda x: x/(1+x)),Ndynamical_mass(gamma(T,rho,r),r)
-        try:
-            rm = r[np.where(np.gradient(N,r)<0)][0]
-        except:
-            rm = 5000
+    for cluster,rs,c in zip(clusters,r_disp,cs):
+        r = np.linspace(rs[0],4*rs[1],1000)
+        gt,gd = cluster.gas_temperature(r),cluster.gas_density(r)
 
-        r = np.linspace(rd[0],rm,4000)
-        T,rho = cluster.gas_temperature(r),cluster.gas_density(r)
-        M,N = Mdynamical_mass(gamma(T,rho,r),r,lambda x: x/(1+x)),Ndynamical_mass(gamma(T,rho,r),r)
-        rM,rN = (1/(4*np.pi*(r**2)))*np.gradient(M,r),(1/(4*np.pi*(r**2)))*np.gradient(N,r)
-        rB = cluster.gas_density(r)
-        diff = rM-rB
+        Mg = 4*np.pi*cumulative_trapezoid(gd*r**2,r,initial=0)
+        MN = Ndynamical_mass(gamma(gt,gd,r),r)
+        MM = Mdynamical_mass(gamma(gt,gd,r),r,lambda x: x/(1+x))
+        Mdm = MN-Mg
+        MMdm = MM-Mg
+        dMdm = np.gradient(Mdm,r)
+        MMdm[np.where(dMdm<0)] = 0
 
-        r500 = r[np.where(rN>=500*133)][-1]
-        r200 = r[np.where(rN>=200*133)][-1]
-        print(r[np.where(diff<0)][0])
-        rx_max = np.amin(r[np.where(diff<0)])
-        rt_max = np.amin(r[np.where(np.gradient(np.log(N),r)<1/(r*((G_mass*N/(a_0*r**2))+1)))])
-        plt.bar(id+1,rm-rd[0],0.8,rd[0],log=True,alpha=0.2,color=cs)
-        plt.semilogy([id+1,id+1],[rx_max,rt_max],c=cs)
-        plt.semilogy([id+0.75,id+1.25],[rx_max,rx_max],c=cs)
-        plt.semilogy([id + 0.75, id + 1.25], [rt_max, rt_max],c=cs)
-        plt.semilogy([id+0.5,id+1.5],[r200,r200],"k-.")
-        plt.semilogy([id + 0.5, id + 1.5], [r500, r500], "k:")
+        T = get_temperature_profile(Mdm,Mg,r,lambda x: x/(1+x),T0=gt[-1])
+        T2 = get_temperature_profile(MMdm,Mg,r,lambda x: x/(1+x),mode="MOND")
+        plt.semilogx(r,T)
+        plt.semilogx(r,T2)
+        plt.semilogx(r,gt)
+        plt.show()
 
 
-    plt.title(r"Best Case and Observed Maximal Viable Radius $\mathcal{R}_v$")
-    plt.ylabel(r"Cluster Radius / $[\mathrm{kpc}]$")
-    plt.xlabel(r"Cluster")
-    plt.xticks([i+1 for i in range(len(clusters))],[cluster.name for cluster in clusters],rotation="vertical")
-
-    #- Custom Legends -#
-    b1 = LineCollection(np.empty((2,2,2)),colors="k")
-    line = Line2D([],[],ls="",c="k")
-    cl = [Line2D([],[],color="k",ls=":"),
-          Line2D([],[],color="k",ls="-."),
-          ErrorbarContainer((line,[line],[b1]),has_yerr=True),
-          Rectangle((0,0),0,0,color="blue",alpha=0.25)]
-
-    plt.legend(cl,[r"$\mathrm{r}_{200}$",r"$\mathrm{r}_{500}$",r"Best Case and Observed $\mathcal{R}_v$",
-                   "Fit Range"])
-
-    plt.show()
-        #ax.loglog(r, np.gradient(N-MB,r) / (4 * np.pi * r ** 2))
-        #ax.loglog(r, -np.gradient(N-MB,r) / (4 * np.pi * r ** 2),"r")
-        #ax.loglog(r,(a_0/(2*np.pi*G_mass))/r)
+        plt.show()

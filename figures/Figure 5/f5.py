@@ -14,8 +14,8 @@ plt.rcParams['ytick.minor.size'] = 5
 plt.rcParams['xtick.direction'] = "in"
 plt.rcParams['ytick.direction'] = "in"
 
-m = np.logspace(np.log10(1e14),np.log10(1e16),100)
-a = np.logspace(2,4,100)
+m = np.logspace(np.log10(1e14),np.log10(1e16),400)
+a = np.logspace(2,4,400)
 M,A = np.meshgrid(m,a)
 c = 133
 r = np.logspace(1,4,1000)
@@ -28,6 +28,7 @@ xq_1000 = np.zeros(M.shape)
 QP_2500 = np.zeros(M.shape)
 xq_2500 = np.zeros(M.shape)
 for i,ms in enumerate(m):
+    print(i)
     for j,a_s in enumerate(a):
         rho = (ms * a_s) / (2 * np.pi * r * (r + a_s) ** 3)
         r_200,r_500,r_1000,r_2500 = np.amin(r[np.where(rho<200*c)]),np.amin(r[np.where(rho<500*c)]),np.amin(r[np.where(rho<1000*c)]),np.amin(r[np.where(rho<2500*c)])
@@ -56,9 +57,7 @@ for i,ms in enumerate(m):
 
 
             Q[i,j] = gamma
-print(xq_500)
-plt.imshow(xq_500)
-plt.show()
+
 cmap = plt.cm.plasma.copy()
 cmap.set_bad("black")
 vmin_Q = np.amin([np.amin(np.log10(i[np.where(i != np.inf)])) for i in [QP_200,QP_500,QP_1000,QP_2500]])
@@ -68,7 +67,7 @@ vmax_P = np.amax([np.amax(np.log10(i[np.where(i != np.inf)])) for i in [xq_200,x
 
 PNorm = mpl.colors.Normalize(vmin=vmin_P,vmax=vmax_P)
 QNorm = mpl.colors.Normalize(vmin=-2,vmax=2)
-fig,axes = plt.subplots(nrows=4,ncols=2,sharey=True,sharex=True,gridspec_kw={"wspace":0,"hspace":0},figsize=(8.5,11))
+fig,axes = plt.subplots(nrows=4,ncols=2,sharey=True,sharex=True,gridspec_kw={"wspace":0,"hspace":0},figsize=(7.5,12))
 
 for i,data in enumerate(zip([QP_200,QP_500,QP_1000,QP_2500],
                [xq_200,xq_500,xq_1000,xq_2500])):
@@ -82,6 +81,7 @@ for i,data in enumerate(zip([QP_200,QP_500,QP_1000,QP_2500],
     CS = axes[i,1].contour(np.log10(X), extent=[1e2, 1e4, 1e14, 1e16], levels=[0], colors="red")
 
     #- Ticks and extra -#
+    axes[i,0].text(2e3,1.3e14,[r"$\mathcal{R}_v \ge r_{200}$",r"$\mathcal{R}_v \ge r_{500}$",r"$\mathcal{R}_v \ge r_{1000}$",r"$\mathcal{R}_v \ge r_{2500}$"][i],bbox={"ec": "k", "fc": "white", "alpha": 0.8})
     axes[i,0].set_yticks([1e14, 5e14, 1e15, 5e15])
     axes[i,0].set_xticks([1e2, 5e2, 1e3, 5e3])
     axes[i,1].set_yticks([1e14, 5e14, 1e15, 5e15])
@@ -94,6 +94,18 @@ cb1 = plt.colorbar(plt.cm.ScalarMappable(norm=PNorm,cmap=plt.cm.plasma), ax=axes
                        label=r"Minimal Interp. Scale / $\left[\log_{10}\left(\alpha\right)\right]$")
 cb2 = plt.colorbar(plt.cm.ScalarMappable(norm=QNorm,cmap=plt.cm.coolwarm), ax=axes[2:,:], location="right", fraction=0.05, pad=0.0,
                        label=r"Relative Acceleration / $\left[\log_{10}\left(\gamma\right)\right]$")
+axes[0,0].text(130,1.3e14,"Clusters Not Viable at $r_{200}$." ,bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8    ,color="red")
+axes[1,0].text(130,1.3e14,"Clusters Not Viable at $r_{500}$." ,bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8    ,color="red")
+axes[2,0].text(130,1.3e14,"Clusters Not Viable at $r_{1000}$.",bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8    ,color="red")
+axes[3,0].text(1.7e3,2.1e14,"Clusters Not Viable\n at $r_{2500}$.",bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8,color="red")
+axes[0,0].text(130,6e15,"Clusters Viable at $r_{200}$." ,bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8    ,color="green")
+axes[1,0].text(130,6e15,"Clusters Viable at $r_{500}$." ,bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8    ,color="green")
+axes[2,0].text(130,6e15,"Clusters Viable at $r_{1000}$.",bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8    ,color="green")
+axes[3,0].text(130,6e15,"Clusters Viable at $r_{2500}$.",bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8,    color="green")
+axes[0,1].text(200,4.2e15,r"$\gamma = 1$",bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8)
+axes[1,1].text(2e3,4e15,r"$\gamma = 1$",bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8)
+axes[2,1].text(2e3,4e15,r"$\gamma = 1$",bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8)
+axes[3,1].text(3e3,4e15,r"$\gamma = 1$",bbox={"ec": "k", "fc": "white", "alpha": 0.8},fontsize=8)
 fig.add_subplot(111, frameon=False)
 # hide tick and tick label of the big axis
 plt.tick_params(labelcolor='none', which='both', top=False, bottom=False, left=False, right=False)
@@ -101,11 +113,11 @@ plt.xlabel("common X")
 plt.ylabel("common Y")
 plt.ylabel(r"Hernquist Mass $\left(\mathrm{M}_0\right)$ / [$\mathrm{M}_{\odot}$]")
 plt.xlabel(r"Hernquist Scale Length $\left(a\right)$ / [$\mathrm{kpc}$]")
-axes[0,0].set_title(r"Minimum Interpolation $\alpha$ For $\mathcal{R}_v > r_{500}$")
+axes[0,0].set_title(r"Minimum Interpolation $\alpha$ For $\mathcal{R}_v > r_{i}$")
 axes[0,1].set_title(r"Relative Acceleration ($\gamma$)")
 plt.suptitle(r"Minimal Interpolation Parameter ($\alpha$) and Associated $\gamma$ For Hernquist Profiles")
-plt.show()
-plt.savefig("test.png")
+plt.subplots_adjust(bottom=0.048,right=0.84,left=0.125,top=0.94)
+plt.savefig("test.png",dpi=400)
 exit()
 i1 = axes[0].imshow(np.log10(xq_500),extent=[1e2,1e4,1e14,1e16],origin="lower",cmap=cmap)
 axes[0].contour(np.log10(QP_500),extent=[1e2,1e4,1e14,1e16],levels=[0],colors="red")
